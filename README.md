@@ -56,6 +56,44 @@ To run the application locally without Docker:
 
 ### Configuration
 
-Database configuration can be modified in:
-- `src/main/resources/application.properties` for local development
-- `docker-compose.yml` for Docker deployment
+The application uses Spring profiles for environment-specific configurations:
+
+- **dev** (default): Development environment configuration
+  - Uses local PostgreSQL database
+  - Shows detailed SQL logs
+  - Automatically updates database schema
+
+- **prod**: Production environment configuration
+  - Used when running with Docker
+  - Optimized connection pool settings
+  - Minimal logging
+  - Validates database schema instead of updating it
+
+- **test**: Testing environment configuration
+  - Uses a separate test database
+  - Creates and drops database schema for each test run
+  - Shows detailed SQL logs for debugging
+
+#### How to specify a profile:
+
+1. Using command line:
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+2. Using environment variable:
+```bash
+export SPRING_PROFILES_ACTIVE=prod
+./mvnw spring-boot:run
+```
+
+3. In Docker (already configured in docker-compose.yml):
+```bash
+docker-compose up -d
+```
+
+Configuration files:
+- `src/main/resources/application.properties`: Common settings
+- `src/main/resources/application-dev.properties`: Development settings
+- `src/main/resources/application-prod.properties`: Production settings
+- `src/main/resources/application-test.properties`: Testing settings
