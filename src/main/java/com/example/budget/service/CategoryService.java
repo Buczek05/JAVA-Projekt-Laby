@@ -3,6 +3,7 @@ package com.example.budget.service;
 import com.example.budget.entity.Category;
 import com.example.budget.entity.CategoryType;
 import com.example.budget.exception.CategoryNotFoundException;
+import com.example.budget.exception.DuplicateCategoryException;
 import com.example.budget.exception.InvalidCategoryException;
 import com.example.budget.repository.CategoryRepository;
 import org.springframework.stereotype.Service;
@@ -25,7 +26,8 @@ public class CategoryService {
      *
      * @param category the category to create
      * @return the created category
-     * @throws InvalidCategoryException if the category is invalid or name already exists
+     * @throws InvalidCategoryException if the category is invalid
+     * @throws DuplicateCategoryException if the category name already exists
      */
     @Transactional
     public Category createCategory(Category category) {
@@ -41,17 +43,17 @@ public class CategoryService {
      * @param category the updated category data
      * @return the updated category
      * @throws CategoryNotFoundException if the category is not found
-     * @throws InvalidCategoryException if the category is invalid or name already exists
+     * @throws InvalidCategoryException if the category is invalid
+     * @throws DuplicateCategoryException if the category name already exists
      */
     @Transactional
     public Category updateCategory(Long id, Category category) {
         Category existingCategory = findById(id);
-        
-        // Update fields
+
         existingCategory.setName(category.getName());
         existingCategory.setDescription(category.getDescription());
         existingCategory.setType(category.getType());
-        
+
         validateCategory(existingCategory);
         validateUniqueNameForUpdate(existingCategory);
         return categoryRepository.save(existingCategory);
@@ -89,7 +91,7 @@ public class CategoryService {
     public List<Category> findAll() {
         return categoryRepository.findAll();
     }
-    
+
     /**
      * Find categories by type
      *
@@ -99,7 +101,7 @@ public class CategoryService {
     public List<Category> findByType(CategoryType type) {
         return categoryRepository.findByType(type);
     }
-    
+
     /**
      * Validate category data
      *
@@ -110,36 +112,36 @@ public class CategoryService {
         if (category.getName() == null || category.getName().trim().isEmpty()) {
             throw new InvalidCategoryException("Category name cannot be empty");
         }
-        
+
         if (category.getType() == null) {
             throw new InvalidCategoryException("Category type cannot be null");
         }
     }
-    
+
     /**
      * Validate that the category name is unique (for new categories)
      *
      * @param category the category to validate
-     * @throws InvalidCategoryException if the category name already exists
+     * @throws DuplicateCategoryException if the category name already exists
      */
     private void validateUniqueName(Category category) {
         Optional<Category> existingCategory = categoryRepository.findByNameIgnoreCase(category.getName());
         if (existingCategory.isPresent()) {
-            throw new InvalidCategoryException("Category with name '" + category.getName() + "' already exists");
+            throw new DuplicateCategoryException("Category with name '" + category.getName() + "' already exists");
         }
     }
-    
+
     /**
      * Validate that the category name is unique (for updates)
      * Allows the category to keep its current name
      *
      * @param category the category to validate
-     * @throws InvalidCategoryException if the category name already exists for a different category
+     * @throws DuplicateCategoryException if the category name already exists for a different category
      */
     private void validateUniqueNameForUpdate(Category category) {
         Optional<Category> existingCategory = categoryRepository.findByNameIgnoreCase(category.getName());
         if (existingCategory.isPresent() && !existingCategory.get().getId().equals(category.getId())) {
-            throw new InvalidCategoryException("Category with name '" + category.getName() + "' already exists");
+            throw new DuplicateCategoryException("Category with name '" + category.getName() + "' already exists");
         }
     }
 }
