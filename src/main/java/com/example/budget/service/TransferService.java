@@ -8,6 +8,7 @@ import com.example.budget.entity.Transfer;
 import com.example.budget.entity.TransactionType;
 import com.example.budget.exception.InsufficientFundsException;
 import com.example.budget.exception.InvalidTransactionException;
+import com.example.budget.exception.SameAccountTransferException;
 import com.example.budget.exception.TransactionNotFoundException;
 import com.example.budget.factory.TransactionFactory;
 import com.example.budget.repository.TransactionRepository;
@@ -49,9 +50,10 @@ public class TransferService {
      * @param transactionDate the date of the transfer
      * @return the created transfer
      * @throws InsufficientFundsException if the source account has insufficient funds
-     * @throws InvalidTransactionException if the transaction is invalid
+     * @throws SameAccountTransferException if source and destination accounts are the same
+     * @throws InvalidTransactionException if the transaction is invalid for other reasons
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Transfer createTransfer(
             Long fromAccountId,
             Long toAccountId,
@@ -59,22 +61,22 @@ public class TransferService {
             BigDecimal amount,
             String description,
             LocalDateTime transactionDate) {
-        
+
         Account fromAccount = accountService.findById(fromAccountId);
         Account toAccount = accountService.findById(toAccountId);
         Category category = categoryService.findById(categoryId);
-        
+
         if (fromAccountId.equals(toAccountId)) {
-            throw new InvalidTransactionException("Source and destination accounts must be different");
+            throw new SameAccountTransferException("Source and destination accounts must be different");
         }
-        
+
         if (fromAccount.getBalance().compareTo(amount) < 0) {
             throw new InsufficientFundsException(
                     "Insufficient funds in account " + fromAccount.getName() + 
                     ". Available: " + fromAccount.getBalance() + 
                     ", Required: " + amount);
         }
-        
+
         Transaction transaction = transactionFactory.createTransaction(
                 TransactionType.TRANSFER,
                 amount,
@@ -83,13 +85,13 @@ public class TransferService {
                 fromAccount,
                 toAccount,
                 category);
-        
+
         fromAccount.setBalance(fromAccount.getBalance().subtract(amount));
         toAccount.setBalance(toAccount.getBalance().add(amount));
-        
+
         accountService.updateAccount(fromAccount.getId(), fromAccount);
         accountService.updateAccount(toAccount.getId(), toAccount);
-        
+
         return (Transfer) transactionRepository.save(transaction);
     }
 
@@ -106,9 +108,10 @@ public class TransferService {
      * @return the updated transfer
      * @throws TransactionNotFoundException if the transfer is not found
      * @throws InsufficientFundsException if the source account has insufficient funds
-     * @throws InvalidTransactionException if the transaction is invalid
+     * @throws SameAccountTransferException if source and destination accounts are the same
+     * @throws InvalidTransactionException if the transaction is invalid for other reasons
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Transfer updateTransfer(
             Long id,
             Long fromAccountId,
@@ -117,53 +120,53 @@ public class TransferService {
             BigDecimal amount,
             String description,
             LocalDateTime transactionDate) {
-        
+
         Transaction existingTransaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new TransactionNotFoundException("Transfer not found with id: " + id));
-        
+
         if (!(existingTransaction instanceof Transfer)) {
             throw new InvalidTransactionException("Transaction with id " + id + " is not a transfer");
         }
-        
+
         Transfer existingTransfer = (Transfer) existingTransaction;
         Account originalFromAccount = existingTransfer.getAccount();
         Account originalToAccount = existingTransfer.getToAccount();
         BigDecimal originalAmount = existingTransfer.getAmount();
-        
+
         originalFromAccount.setBalance(originalFromAccount.getBalance().add(originalAmount));
         originalToAccount.setBalance(originalToAccount.getBalance().subtract(originalAmount));
-        
+
         accountService.updateAccount(originalFromAccount.getId(), originalFromAccount);
         accountService.updateAccount(originalToAccount.getId(), originalToAccount);
-        
+
         Account newFromAccount = accountService.findById(fromAccountId);
         Account newToAccount = accountService.findById(toAccountId);
         Category newCategory = categoryService.findById(categoryId);
-        
+
         if (fromAccountId.equals(toAccountId)) {
-            throw new InvalidTransactionException("Source and destination accounts must be different");
+            throw new SameAccountTransferException("Source and destination accounts must be different");
         }
-        
+
         if (newFromAccount.getBalance().compareTo(amount) < 0) {
             throw new InsufficientFundsException(
                     "Insufficient funds in account " + newFromAccount.getName() + 
                     ". Available: " + newFromAccount.getBalance() + 
                     ", Required: " + amount);
         }
-        
+
         existingTransfer.setAccount(newFromAccount);
         existingTransfer.setToAccount(newToAccount);
         existingTransfer.setCategory(newCategory);
         existingTransfer.setAmount(amount);
         existingTransfer.setDescription(description);
         existingTransfer.setTransactionDate(transactionDate);
-        
+
         newFromAccount.setBalance(newFromAccount.getBalance().subtract(amount));
         newToAccount.setBalance(newToAccount.getBalance().add(amount));
-        
+
         accountService.updateAccount(newFromAccount.getId(), newFromAccount);
         accountService.updateAccount(newToAccount.getId(), newToAccount);
-        
+
         return (Transfer) transactionRepository.save(existingTransfer);
     }
 
@@ -174,26 +177,26 @@ public class TransferService {
      * @throws TransactionNotFoundException if the transfer is not found
      * @throws InvalidTransactionException if the transaction is not a transfer
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void deleteTransfer(Long id) {
         Transaction transaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new TransactionNotFoundException("Transfer not found with id: " + id));
-        
+
         if (!(transaction instanceof Transfer)) {
             throw new InvalidTransactionException("Transaction with id " + id + " is not a transfer");
         }
-        
+
         Transfer transfer = (Transfer) transaction;
         Account fromAccount = transfer.getAccount();
         Account toAccount = transfer.getToAccount();
         BigDecimal amount = transfer.getAmount();
-        
+
         fromAccount.setBalance(fromAccount.getBalance().add(amount));
         toAccount.setBalance(toAccount.getBalance().subtract(amount));
-        
+
         accountService.updateAccount(fromAccount.getId(), fromAccount);
         accountService.updateAccount(toAccount.getId(), toAccount);
-        
+
         transactionRepository.delete(transfer);
     }
 
@@ -208,11 +211,11 @@ public class TransferService {
     public Transfer findById(Long id) {
         Transaction transaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new TransactionNotFoundException("Transfer not found with id: " + id));
-        
+
         if (!(transaction instanceof Transfer)) {
             throw new InvalidTransactionException("Transaction with id " + id + " is not a transfer");
         }
-        
+
         return (Transfer) transaction;
     }
 
@@ -252,7 +255,7 @@ public class TransferService {
     public List<Transfer> findByToAccount(Long accountId) {
         Account account = accountService.findById(accountId);
         List<Transaction> allTransactions = transactionRepository.findAll();
-        
+
         return allTransactions.stream()
                 .filter(transaction -> transaction instanceof Transfer)
                 .map(transaction -> (Transfer) transaction)
