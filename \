@@ -1,0 +1,29 @@
+Add unit tests and dependencies; comment out exception handler
+
+Added `AccountServiceTest` and `CategoryServiceTest` to ensure proper validation and functionality of account and category operations. Updated `pom.xml` to include Mockito dependency for testing. Commented out `GlobalExceptionHandler` temporarily and adjusted logging levels in `application-prod.properties` for better debugging.
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# Date:      Sun May 18 18:56:31 2025 +0200
+#
+# On branch main
+# Your branch is ahead of 'origin/main' by 13 commits.
+#   (use "git push" to publish your local commits)
+#
+# Changes to be committed:
+#	new file:   src/test/java/com/example/budget/service/AccountServiceTest.java
+#	new file:   src/test/java/com/example/budget/service/CategoryServiceTest.java
+#	new file:   src/test/java/com/example/budget/service/ExpenseServiceTest.java
+#	new file:   src/test/java/com/example/budget/service/IncomeServiceTest.java
+#	new file:   src/test/java/com/example/budget/service/TransferServiceTest.java
+#
+# Changes not staged for commit:
+#	modified:   pom.xml
+#	modified:   src/main/java/com/example/budget/exception/GlobalExceptionHandler.java
+#	modified:   src/main/resources/application-dev.properties
+#	modified:   src/main/resources/application-prod.properties
+#	modified:   src/test/java/com/example/budget/service/AccountServiceTest.java
+#	modified:   src/test/java/com/example/budget/service/CategoryServiceTest.java
+#	modified:   src/test/java/com/example/budget/service/ExpenseServiceTest.java
+#	modified:   src/test/java/com/example/budget/service/IncomeServiceTest.java
+#
