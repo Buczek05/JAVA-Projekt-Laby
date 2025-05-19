@@ -1,5 +1,6 @@
 package com.example.budget.controller;
 
+import com.example.budget.controller.dto.IncomeRequest;
 import com.example.budget.entity.Income;
 import com.example.budget.service.IncomeService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -116,7 +117,7 @@ public class IncomeController {
         @ApiResponse(responseCode = "400", description = "Invalid date format"),
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
-    @GetMapping("/dateRange")
+    @GetMapping("/date-range")
     public ResponseEntity<List<Income>> getIncomesByDateRange(
             @Parameter(description = "Start date (ISO format)", required = true)
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
@@ -129,11 +130,7 @@ public class IncomeController {
     /**
      * Create a new income
      *
-     * @param accountId the id of the account
-     * @param categoryId the id of the category
-     * @param amount the amount of the income
-     * @param description the description of the income (optional)
-     * @param transactionDate the date of the income
+     * @param requestBody the income request containing account ID, category ID, amount, description, and transaction date
      * @return the created income
      */
     @Operation(summary = "Create a new income", description = "Creates a new income and returns the created income")
@@ -145,19 +142,15 @@ public class IncomeController {
     })
     @PostMapping
     public ResponseEntity<Income> createIncome(
-            @Parameter(description = "ID of the account", required = true)
-            @RequestParam Long accountId,
-            @Parameter(description = "ID of the category", required = true)
-            @RequestParam Long categoryId,
-            @Parameter(description = "Amount of the income", required = true)
-            @RequestParam BigDecimal amount,
-            @Parameter(description = "Description of the income")
-            @RequestParam(required = false) String description,
-            @Parameter(description = "Date of the income (ISO format)", required = true)
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime transactionDate) {
-        
+            @Parameter(description = "Income details", required = true)
+            @RequestBody IncomeRequest requestBody) {
+
         Income income = incomeService.createIncome(
-                accountId, categoryId, amount, description, transactionDate);
+                requestBody.getAccountId(), 
+                requestBody.getCategoryId(), 
+                requestBody.getAmount(), 
+                requestBody.getDescription(), 
+                requestBody.getTransactionDate());
         return ResponseEntity.status(HttpStatus.CREATED).body(income);
     }
 
@@ -165,11 +158,7 @@ public class IncomeController {
      * Update an existing income
      *
      * @param id the id of the income to update
-     * @param accountId the id of the account
-     * @param categoryId the id of the category
-     * @param amount the amount of the income
-     * @param description the description of the income (optional)
-     * @param transactionDate the date of the income
+     * @param requestBody the income request containing account ID, category ID, amount, description, and transaction date
      * @return the updated income
      */
     @Operation(summary = "Update an income", description = "Updates an existing income and returns the updated income")
@@ -183,19 +172,16 @@ public class IncomeController {
     public ResponseEntity<Income> updateIncome(
             @Parameter(description = "ID of the income to update", required = true)
             @PathVariable Long id,
-            @Parameter(description = "ID of the account", required = true)
-            @RequestParam Long accountId,
-            @Parameter(description = "ID of the category", required = true)
-            @RequestParam Long categoryId,
-            @Parameter(description = "Amount of the income", required = true)
-            @RequestParam BigDecimal amount,
-            @Parameter(description = "Description of the income")
-            @RequestParam(required = false) String description,
-            @Parameter(description = "Date of the income (ISO format)", required = true)
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime transactionDate) {
-        
+            @Parameter(description = "Income details", required = true)
+            @RequestBody IncomeRequest requestBody) {
+
         Income income = incomeService.updateIncome(
-                id, accountId, categoryId, amount, description, transactionDate);
+                id, 
+                requestBody.getAccountId(), 
+                requestBody.getCategoryId(), 
+                requestBody.getAmount(), 
+                requestBody.getDescription(), 
+                requestBody.getTransactionDate());
         return ResponseEntity.ok(income);
     }
 

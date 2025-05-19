@@ -55,14 +55,14 @@ public class IncomeService {
             BigDecimal amount,
             String description,
             LocalDateTime transactionDate) {
-        
+
         Account account = accountService.findById(accountId);
         Category category = categoryService.findById(categoryId);
-        
+
         if (category.getType() != CategoryType.INCOME) {
             throw new InvalidTransactionException("Category must be of type INCOME");
         }
-        
+
         Transaction transaction = transactionFactory.createTransaction(
                 TransactionType.INCOME,
                 amount,
@@ -71,10 +71,10 @@ public class IncomeService {
                 account,
                 null,
                 category);
-        
+
         account.setBalance(account.getBalance().add(amount));
         accountService.updateAccount(account.getId(), account);
-        
+
         return (Income) transactionRepository.save(transaction);
     }
 
@@ -99,37 +99,37 @@ public class IncomeService {
             BigDecimal amount,
             String description,
             LocalDateTime transactionDate) {
-        
+
         Transaction existingTransaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new TransactionNotFoundException("Income not found with id: " + id));
-        
+
         if (!(existingTransaction instanceof Income)) {
             throw new InvalidTransactionException("Transaction with id " + id + " is not an income");
         }
-        
+
         Income existingIncome = (Income) existingTransaction;
         Account originalAccount = existingIncome.getAccount();
         BigDecimal originalAmount = existingIncome.getAmount();
-        
+
         originalAccount.setBalance(originalAccount.getBalance().subtract(originalAmount));
         accountService.updateAccount(originalAccount.getId(), originalAccount);
-        
+
         Account newAccount = accountService.findById(accountId);
         Category newCategory = categoryService.findById(categoryId);
-        
+
         if (newCategory.getType() != CategoryType.INCOME) {
             throw new InvalidTransactionException("Category must be of type INCOME");
         }
-        
+
         existingIncome.setAccount(newAccount);
         existingIncome.setCategory(newCategory);
         existingIncome.setAmount(amount);
         existingIncome.setDescription(description);
         existingIncome.setTransactionDate(transactionDate);
-        
+
         newAccount.setBalance(newAccount.getBalance().add(amount));
         accountService.updateAccount(newAccount.getId(), newAccount);
-        
+
         return (Income) transactionRepository.save(existingIncome);
     }
 
@@ -144,17 +144,17 @@ public class IncomeService {
     public void deleteIncome(Long id) {
         Transaction transaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new TransactionNotFoundException("Income not found with id: " + id));
-        
+
         if (!(transaction instanceof Income)) {
             throw new InvalidTransactionException("Transaction with id " + id + " is not an income");
         }
-        
+
         Income income = (Income) transaction;
         Account account = income.getAccount();
-        
+
         account.setBalance(account.getBalance().subtract(income.getAmount()));
         accountService.updateAccount(account.getId(), account);
-        
+
         transactionRepository.delete(income);
     }
 
@@ -169,11 +169,11 @@ public class IncomeService {
     public Income findById(Long id) {
         Transaction transaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new TransactionNotFoundException("Income not found with id: " + id));
-        
+
         if (!(transaction instanceof Income)) {
             throw new InvalidTransactionException("Transaction with id " + id + " is not an income");
         }
-        
+
         return (Income) transaction;
     }
 

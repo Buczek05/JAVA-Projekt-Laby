@@ -19,9 +19,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class Transfer extends Transaction {
 
-    @NotNull
     @ManyToOne
-    @JoinColumn(name = "to_account_id", nullable = false)
+    @JoinColumn(name = "to_account_id")
     private Account toAccount;
 
     public Transfer(BigDecimal amount, LocalDateTime transactionDate, Account fromAccount, Account toAccount, Category category) {

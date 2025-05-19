@@ -17,10 +17,32 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     List<Transaction> findByAccount(Account account);
     List<Transaction> findByCategory(Category category);
     List<Transaction> findByTransactionDateBetween(LocalDateTime startDate, LocalDateTime endDate);
-    @Query("SELECT t FROM Transaction t WHERE TYPE(t) = CASE " +
-           "WHEN :type = com.example.budget.entity.TransactionType.EXPENSE THEN com.example.budget.entity.Expense " +
-           "WHEN :type = com.example.budget.entity.TransactionType.INCOME THEN com.example.budget.entity.Income " +
-           "WHEN :type = com.example.budget.entity.TransactionType.TRANSFER THEN com.example.budget.entity.Transfer " +
-           "END")
-    List<Transaction> findByType(TransactionType type);
+
+    @Query("SELECT t FROM Transfer t WHERE t.toAccount = :toAccount")
+    List<Transaction> findTransfersByToAccount(Account toAccount);
+
+    @Query("SELECT t FROM Transfer t WHERE t.account = :fromAccount")
+    List<Transaction> findTransfersByFromAccount(Account fromAccount);
+    // Simple query using the TYPE operator
+    @Query("SELECT t FROM Transaction t WHERE TYPE(t) = :className")
+    List<Transaction> findByClassName(Class<?> className);
+
+    // Method to find transactions by type
+    default List<Transaction> findByType(TransactionType type) {
+        Class<?> className;
+        switch (type) {
+            case INCOME:
+                className = com.example.budget.entity.Income.class;
+                break;
+            case EXPENSE:
+                className = com.example.budget.entity.Expense.class;
+                break;
+            case TRANSFER:
+                className = com.example.budget.entity.Transfer.class;
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown transaction type: " + type);
+        }
+        return findByClassName(className);
+    }
 }

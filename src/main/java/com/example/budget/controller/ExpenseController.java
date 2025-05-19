@@ -1,5 +1,6 @@
 package com.example.budget.controller;
 
+import com.example.budget.controller.dto.ExpenseRequest;
 import com.example.budget.entity.Expense;
 import com.example.budget.service.ExpenseService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -116,7 +117,7 @@ public class ExpenseController {
         @ApiResponse(responseCode = "400", description = "Invalid date format"),
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
-    @GetMapping("/dateRange")
+    @GetMapping("/date-range")
     public ResponseEntity<List<Expense>> getExpensesByDateRange(
             @Parameter(description = "Start date (ISO format)", required = true)
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
@@ -129,11 +130,7 @@ public class ExpenseController {
     /**
      * Create a new expense
      *
-     * @param accountId the id of the account
-     * @param categoryId the id of the category
-     * @param amount the amount of the expense
-     * @param description the description of the expense (optional)
-     * @param transactionDate the date of the expense
+     * @param requestBody the expense request containing account ID, category ID, amount, description, and transaction date
      * @return the created expense
      */
     @Operation(summary = "Create a new expense", description = "Creates a new expense and returns the created expense")
@@ -145,19 +142,15 @@ public class ExpenseController {
     })
     @PostMapping
     public ResponseEntity<Expense> createExpense(
-            @Parameter(description = "ID of the account", required = true)
-            @RequestParam Long accountId,
-            @Parameter(description = "ID of the category", required = true)
-            @RequestParam Long categoryId,
-            @Parameter(description = "Amount of the expense", required = true)
-            @RequestParam BigDecimal amount,
-            @Parameter(description = "Description of the expense")
-            @RequestParam(required = false) String description,
-            @Parameter(description = "Date of the expense (ISO format)", required = true)
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime transactionDate) {
-        
+            @Parameter(description = "Expense details", required = true)
+            @RequestBody ExpenseRequest requestBody) {
+
         Expense expense = expenseService.createExpense(
-                accountId, categoryId, amount, description, transactionDate);
+                requestBody.getAccountId(), 
+                requestBody.getCategoryId(), 
+                requestBody.getAmount(), 
+                requestBody.getDescription(), 
+                requestBody.getTransactionDate());
         return ResponseEntity.status(HttpStatus.CREATED).body(expense);
     }
 
@@ -165,11 +158,7 @@ public class ExpenseController {
      * Update an existing expense
      *
      * @param id the id of the expense to update
-     * @param accountId the id of the account
-     * @param categoryId the id of the category
-     * @param amount the amount of the expense
-     * @param description the description of the expense (optional)
-     * @param transactionDate the date of the expense
+     * @param requestBody the expense request containing account ID, category ID, amount, description, and transaction date
      * @return the updated expense
      */
     @Operation(summary = "Update an expense", description = "Updates an existing expense and returns the updated expense")
@@ -183,19 +172,16 @@ public class ExpenseController {
     public ResponseEntity<Expense> updateExpense(
             @Parameter(description = "ID of the expense to update", required = true)
             @PathVariable Long id,
-            @Parameter(description = "ID of the account", required = true)
-            @RequestParam Long accountId,
-            @Parameter(description = "ID of the category", required = true)
-            @RequestParam Long categoryId,
-            @Parameter(description = "Amount of the expense", required = true)
-            @RequestParam BigDecimal amount,
-            @Parameter(description = "Description of the expense")
-            @RequestParam(required = false) String description,
-            @Parameter(description = "Date of the expense (ISO format)", required = true)
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime transactionDate) {
-        
+            @Parameter(description = "Expense details", required = true)
+            @RequestBody ExpenseRequest requestBody) {
+
         Expense expense = expenseService.updateExpense(
-                id, accountId, categoryId, amount, description, transactionDate);
+                id, 
+                requestBody.getAccountId(), 
+                requestBody.getCategoryId(), 
+                requestBody.getAmount(), 
+                requestBody.getDescription(), 
+                requestBody.getTransactionDate());
         return ResponseEntity.ok(expense);
     }
 

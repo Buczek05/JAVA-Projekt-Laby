@@ -333,8 +333,6 @@ public class TransferServiceTest {
         String description = "Test Transfer";
 
         when(transactionRepository.findById(transferId)).thenReturn(Optional.of(transfer));
-        when(accountService.findById(fromAccount.getId())).thenReturn(fromAccount);
-        when(categoryService.findById(transferCategory.getId())).thenReturn(transferCategory);
 
         // Act & Assert
         SameAccountTransferException exception = assertThrows(SameAccountTransferException.class,
@@ -348,10 +346,10 @@ public class TransferServiceTest {
                         transactionDate));
         assertEquals("Source and destination accounts must be different", exception.getMessage());
         verify(transactionRepository, times(1)).findById(transferId);
-        verify(accountService, times(2)).findById(fromAccount.getId());
-        verify(categoryService, times(1)).findById(transferCategory.getId());
         verify(accountService, times(1)).updateAccount(eq(fromAccount.getId()), any(Account.class));
         verify(accountService, times(1)).updateAccount(eq(toAccount.getId()), any(Account.class));
+        verify(accountService, never()).findById(any());
+        verify(categoryService, never()).findById(any());
         verify(transactionRepository, never()).save(any());
     }
 
