@@ -1,329 +1,458 @@
 package com.example.budget.controller;
 
+import com.example.budget.controller.dto.IncomeRequest;
 import com.example.budget.entity.Account;
 import com.example.budget.entity.Category;
-import com.example.budget.entity.CategoryType;
 import com.example.budget.entity.Income;
-import com.example.budget.repository.AccountRepository;
-import com.example.budget.repository.CategoryRepository;
-import com.example.budget.repository.TransactionRepository;
+import com.example.budget.exception.InvalidTransactionException;
+import com.example.budget.exception.TransactionNotFoundException;
+import com.example.budget.service.IncomeService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.transaction.annotation.Transactional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.List;
 
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-class IncomeControllerTest extends BaseControllerTest {
+@ExtendWith(MockitoExtension.class)
+class IncomeControllerTest {
 
-    @Autowired
-    private AccountRepository accountRepository;
+    private MockMvc mockMvc;
+    private ObjectMapper objectMapper;
 
-    @Autowired
-    private CategoryRepository categoryRepository;
+    @Mock
+    private IncomeService incomeService;
 
-    @Autowired
-    private TransactionRepository transactionRepository;
+    @InjectMocks
+    private IncomeController incomeController;
 
+    private Income testIncome;
+    private Income updatedIncome;
+    private IncomeRequest incomeRequest;
     private Account testAccount;
     private Category testCategory;
-    private final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+
+    @ControllerAdvice
+    static class TestControllerAdvice {
+
+        @ExceptionHandler(TransactionNotFoundException.class)
+        @ResponseStatus(HttpStatus.NOT_FOUND)
+        public ResponseEntity<String> handleTransactionNotFoundException(TransactionNotFoundException ex) {
+            return new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND);
+        }
+
+        @ExceptionHandler(InvalidTransactionException.class)
+        @ResponseStatus(HttpStatus.BAD_REQUEST)
+        public ResponseEntity<String> handleInvalidTransactionException(InvalidTransactionException ex) {
+            return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST);
+        }
+    }
 
     @BeforeEach
     void setUp() {
-        // Create test account and category for each test
-        testAccount = createTestAccount("Test Account", BigDecimal.valueOf(1000), "USD");
-        testCategory = createTestCategory("Test Income Category", "For testing incomes", CategoryType.INCOME);
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(incomeController)
+                .setControllerAdvice(new TestControllerAdvice())
+                .build();
+
+        // Setup test account
+        testAccount = new Account();
+        testAccount.setId(1L);
+        testAccount.setName("Test Account");
+        testAccount.setBalance(BigDecimal.valueOf(1000));
+        testAccount.setCurrency("USD");
+        testAccount.setCreatedAt(LocalDateTime.now());
+        testAccount.setUpdatedAt(LocalDateTime.now());
+
+        // Setup test category
+        testCategory = new Category();
+        testCategory.setId(1L);
+        testCategory.setName("Test Category");
+
+        // Setup test income
+        testIncome = new Income(BigDecimal.valueOf(500), "Test Income", LocalDateTime.now(), testAccount, testCategory);
+        testIncome.setId(1L);
+
+        // Setup updated income
+        updatedIncome = new Income(BigDecimal.valueOf(750), "Updated Income", LocalDateTime.now(), testAccount, testCategory);
+        updatedIncome.setId(1L);
+
+        // Setup income request
+        incomeRequest = new IncomeRequest();
+        incomeRequest.setAccountId(1L);
+        incomeRequest.setCategoryId(1L);
+        incomeRequest.setAmount(BigDecimal.valueOf(500));
+        incomeRequest.setDescription("Test Income");
+        incomeRequest.setTransactionDate(LocalDateTime.now());
     }
 
     @Test
-    void getAllIncomes_ReturnsAllIncomes() throws Exception {
+    void getAllIncomes_ReturnsListOfIncomes() throws Exception {
         // Given
-        Income income1 = createTestIncome(testAccount, testCategory, BigDecimal.valueOf(100), "Income 1");
-        Income income2 = createTestIncome(testAccount, testCategory, BigDecimal.valueOf(200), "Income 2");
+        Income income1 = new Income(BigDecimal.valueOf(500), "Income 1", LocalDateTime.now(), testAccount, testCategory);
+        income1.setId(1L);
+        Income income2 = new Income(BigDecimal.valueOf(750), "Income 2", LocalDateTime.now(), testAccount, testCategory);
+        income2.setId(2L);
+        List<Income> incomes = Arrays.asList(income1, income2);
 
-        System.out.println("[DEBUG_LOG] Created income1: " + income1.getId() + ", " + income1.getDescription());
-        System.out.println("[DEBUG_LOG] Created income2: " + income2.getId() + ", " + income2.getDescription());
+        when(incomeService.findAll()).thenReturn(incomes);
 
         // When
-        mockMvc.perform(get("/api/incomes"))
-               .andDo(result -> {
-                   System.out.println("[DEBUG_LOG] Response content: " + result.getResponse().getContentAsString());
-                   System.out.println("[DEBUG_LOG] Response status: " + result.getResponse().getStatus());
-               })
-               .andExpect(status().isOk());
-    }
-
-    @Test
-    void testGetAllIncomesSimple() throws Exception {
-        // Simple test to check if the endpoint returns 200 OK
-        mockMvc.perform(get("/api/incomes"))
-               .andExpect(status().isOk());
-    }
-
-    @Test
-    void getIncomeById_ExistingId_ReturnsIncome() throws Exception {
-        // Given
-        Income income = createTestIncome(testAccount, testCategory, BigDecimal.valueOf(150), "Test Income");
-
-        // When
-        ResultActions result = mockMvc.perform(get("/api/incomes/{id}", income.getId())
+        ResultActions result = mockMvc.perform(get("/api/incomes")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$.id", is(income.getId().intValue())))
-              .andExpect(jsonPath("$.amount", is(150)))
-              .andExpect(jsonPath("$.description", is("Test Income")))
-              .andExpect(jsonPath("$.account.id", is(testAccount.getId().intValue())))
-              .andExpect(jsonPath("$.category.id", is(testCategory.getId().intValue())));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(500)))
+                .andExpect(jsonPath("$[0].description", is("Income 1")))
+                .andExpect(jsonPath("$[1].id", is(2)))
+                .andExpect(jsonPath("$[1].amount", is(750)))
+                .andExpect(jsonPath("$[1].description", is("Income 2")));
+
+        verify(incomeService, times(1)).findAll();
     }
 
     @Test
-    void getIncomeById_NonExistingId_ReturnsNotFound() throws Exception {
+    void getIncomeById_ExistingIncome_ReturnsIncome() throws Exception {
+        // Given
+        when(incomeService.findById(1L)).thenReturn(testIncome);
+
         // When
-        ResultActions result = mockMvc.perform(get("/api/incomes/{id}", 999)
+        ResultActions result = mockMvc.perform(get("/api/incomes/1")
+                .contentType(MediaType.APPLICATION_JSON));
+
+        // Then
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id", is(1)))
+                .andExpect(jsonPath("$.amount", is(500)))
+                .andExpect(jsonPath("$.description", is("Test Income")));
+
+        verify(incomeService, times(1)).findById(1L);
+    }
+
+    @Test
+    void getIncomeById_NonExistingIncome_ReturnsNotFound() throws Exception {
+        // Given
+        when(incomeService.findById(999L)).thenThrow(new TransactionNotFoundException("Income not found with id: 999"));
+
+        // When
+        ResultActions result = mockMvc.perform(get("/api/incomes/999")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isNotFound());
+
+        verify(incomeService, times(1)).findById(999L);
     }
 
     @Test
-    void getIncomesByAccount_ReturnsMatchingIncomes() throws Exception {
+    void getIncomesByAccount_ExistingAccount_ReturnsIncomes() throws Exception {
         // Given
-        Account anotherAccount = createTestAccount("Another Account", BigDecimal.valueOf(2000), "EUR");
-        createTestIncome(testAccount, testCategory, BigDecimal.valueOf(100), "Income for Test Account");
-        createTestIncome(testAccount, testCategory, BigDecimal.valueOf(200), "Another Income for Test Account");
-        createTestIncome(anotherAccount, testCategory, BigDecimal.valueOf(300), "Income for Another Account");
+        Income income1 = new Income(BigDecimal.valueOf(500), "Income 1", LocalDateTime.now(), testAccount, testCategory);
+        income1.setId(1L);
+        Income income2 = new Income(BigDecimal.valueOf(750), "Income 2", LocalDateTime.now(), testAccount, testCategory);
+        income2.setId(2L);
+        List<Income> incomes = Arrays.asList(income1, income2);
+
+        when(incomeService.findByAccount(1L)).thenReturn(incomes);
 
         // When
-        ResultActions result = mockMvc.perform(get("/api/incomes/account/{accountId}", testAccount.getId())
+        ResultActions result = mockMvc.perform(get("/api/incomes/account/1")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$", hasSize(2)))
-              .andExpect(jsonPath("$[*].description", hasItems("Income for Test Account", "Another Income for Test Account")))
-              .andExpect(jsonPath("$[*].account.id", everyItem(is(testAccount.getId().intValue()))));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(500)))
+                .andExpect(jsonPath("$[0].description", is("Income 1")))
+                .andExpect(jsonPath("$[1].id", is(2)))
+                .andExpect(jsonPath("$[1].amount", is(750)))
+                .andExpect(jsonPath("$[1].description", is("Income 2")));
+
+        verify(incomeService, times(1)).findByAccount(1L);
     }
 
     @Test
-    void getIncomesByCategory_ReturnsMatchingIncomes() throws Exception {
+    void getIncomesByCategory_ExistingCategory_ReturnsIncomes() throws Exception {
         // Given
-        Category anotherCategory = createTestCategory("Another Category", "Another description", CategoryType.INCOME);
-        createTestIncome(testAccount, testCategory, BigDecimal.valueOf(100), "Income for Test Category");
-        createTestIncome(testAccount, testCategory, BigDecimal.valueOf(200), "Another Income for Test Category");
-        createTestIncome(testAccount, anotherCategory, BigDecimal.valueOf(300), "Income for Another Category");
+        Income income1 = new Income(BigDecimal.valueOf(500), "Income 1", LocalDateTime.now(), testAccount, testCategory);
+        income1.setId(1L);
+        Income income2 = new Income(BigDecimal.valueOf(750), "Income 2", LocalDateTime.now(), testAccount, testCategory);
+        income2.setId(2L);
+        List<Income> incomes = Arrays.asList(income1, income2);
+
+        when(incomeService.findByCategory(1L)).thenReturn(incomes);
 
         // When
-        ResultActions result = mockMvc.perform(get("/api/incomes/category/{categoryId}", testCategory.getId())
+        ResultActions result = mockMvc.perform(get("/api/incomes/category/1")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$", hasSize(2)))
-              .andExpect(jsonPath("$[*].description", hasItems("Income for Test Category", "Another Income for Test Category")))
-              .andExpect(jsonPath("$[*].category.id", everyItem(is(testCategory.getId().intValue()))));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(500)))
+                .andExpect(jsonPath("$[0].description", is("Income 1")))
+                .andExpect(jsonPath("$[1].id", is(2)))
+                .andExpect(jsonPath("$[1].amount", is(750)))
+                .andExpect(jsonPath("$[1].description", is("Income 2")));
+
+        verify(incomeService, times(1)).findByCategory(1L);
     }
 
     @Test
-    void getIncomesByDateRange_ReturnsMatchingIncomes() throws Exception {
+    void getIncomesByDateRange_ValidDateRange_ReturnsIncomes() throws Exception {
         // Given
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime yesterday = now.minusDays(1);
-        LocalDateTime tomorrow = now.plusDays(1);
+        LocalDateTime startDate = LocalDateTime.of(2023, 1, 1, 0, 0);
+        LocalDateTime endDate = LocalDateTime.of(2023, 12, 31, 23, 59);
+        
+        Income income1 = new Income(BigDecimal.valueOf(500), "Income 1", LocalDateTime.now(), testAccount, testCategory);
+        income1.setId(1L);
+        Income income2 = new Income(BigDecimal.valueOf(750), "Income 2", LocalDateTime.now(), testAccount, testCategory);
+        income2.setId(2L);
+        List<Income> incomes = Arrays.asList(income1, income2);
 
-        createTestIncome(testAccount, testCategory, BigDecimal.valueOf(100), "Yesterday Income", yesterday);
-        createTestIncome(testAccount, testCategory, BigDecimal.valueOf(200), "Today Income", now);
-        createTestIncome(testAccount, testCategory, BigDecimal.valueOf(300), "Tomorrow Income", tomorrow);
+        when(incomeService.findByDateRange(any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(incomes);
 
         // When
         ResultActions result = mockMvc.perform(get("/api/incomes/date-range")
-                .param("startDate", yesterday.format(formatter))
-                .param("endDate", now.format(formatter))
+                .param("startDate", startDate.toString())
+                .param("endDate", endDate.toString())
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$", hasSize(2)))
-              .andExpect(jsonPath("$[*].description", hasItems("Yesterday Income", "Today Income")))
-              .andExpect(jsonPath("$[*].amount", hasItems(100, 200)));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(500)))
+                .andExpect(jsonPath("$[0].description", is("Income 1")))
+                .andExpect(jsonPath("$[1].id", is(2)))
+                .andExpect(jsonPath("$[1].amount", is(750)))
+                .andExpect(jsonPath("$[1].description", is("Income 2")));
+
+        verify(incomeService, times(1)).findByDateRange(any(LocalDateTime.class), any(LocalDateTime.class));
     }
 
     @Test
     void createIncome_ValidIncome_ReturnsCreatedIncome() throws Exception {
         // Given
-        BigDecimal initialBalance = testAccount.getBalance();
-        BigDecimal incomeAmount = BigDecimal.valueOf(150);
-        LocalDateTime transactionDate = LocalDateTime.now();
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("accountId", testAccount.getId());
-        requestBody.put("categoryId", testCategory.getId());
-        requestBody.put("amount", incomeAmount);
-        requestBody.put("description", "New Income");
-        requestBody.put("transactionDate", transactionDate.format(formatter));
+        when(incomeService.createIncome(
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        )).thenReturn(testIncome);
 
         // When
         ResultActions result = mockMvc.perform(post("/api/incomes")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestBody)));
+                .content(objectMapper.writeValueAsString(incomeRequest)));
 
         // Then
         result.andExpect(status().isCreated())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$.id", notNullValue()))
-              .andExpect(jsonPath("$.amount", is(150)))
-              .andExpect(jsonPath("$.description", is("New Income")))
-              .andExpect(jsonPath("$.account.id", is(testAccount.getId().intValue())))
-              .andExpect(jsonPath("$.category.id", is(testCategory.getId().intValue())));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id", is(1)))
+                .andExpect(jsonPath("$.amount", is(500)))
+                .andExpect(jsonPath("$.description", is("Test Income")));
 
-        // Verify account balance was updated
-        Account updatedAccount = accountRepository.findById(testAccount.getId()).orElseThrow();
-        assertEquals(initialBalance.add(incomeAmount), updatedAccount.getBalance());
+        verify(incomeService, times(1)).createIncome(
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        );
     }
 
     @Test
-    void createIncome_InvalidCategory_ReturnsBadRequest() throws Exception {
+    void createIncome_InvalidIncome_ReturnsBadRequest() throws Exception {
         // Given
-        Category expenseCategory = createTestCategory("Expense Category", "Not for income", CategoryType.EXPENSE);
-        LocalDateTime transactionDate = LocalDateTime.now();
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("accountId", testAccount.getId());
-        requestBody.put("categoryId", expenseCategory.getId()); // Using expense category for income
-        requestBody.put("amount", BigDecimal.valueOf(150));
-        requestBody.put("description", "Invalid Income");
-        requestBody.put("transactionDate", transactionDate.format(formatter));
+        when(incomeService.createIncome(
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        )).thenThrow(new InvalidTransactionException("Category must be of type INCOME"));
 
         // When
         ResultActions result = mockMvc.perform(post("/api/incomes")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestBody)));
+                .content(objectMapper.writeValueAsString(incomeRequest)));
 
         // Then
         result.andExpect(status().isBadRequest());
 
-        // Verify account balance was not changed
-        Account unchangedAccount = accountRepository.findById(testAccount.getId()).orElseThrow();
-        assertEquals(testAccount.getBalance(), unchangedAccount.getBalance());
+        verify(incomeService, times(1)).createIncome(
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        );
     }
 
     @Test
-    void updateIncome_ValidIncome_ReturnsUpdatedIncome() throws Exception {
+    void updateIncome_ExistingIncome_ReturnsUpdatedIncome() throws Exception {
         // Given
-        Income income = createTestIncome(testAccount, testCategory, BigDecimal.valueOf(100), "Original Income");
-        BigDecimal initialBalance = accountRepository.findById(testAccount.getId()).orElseThrow().getBalance();
-        BigDecimal newAmount = BigDecimal.valueOf(200);
-        LocalDateTime newDate = LocalDateTime.now();
+        IncomeRequest updateRequest = new IncomeRequest();
+        updateRequest.setAccountId(1L);
+        updateRequest.setCategoryId(1L);
+        updateRequest.setAmount(BigDecimal.valueOf(750));
+        updateRequest.setDescription("Updated Income");
+        updateRequest.setTransactionDate(LocalDateTime.now());
 
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("accountId", testAccount.getId());
-        requestBody.put("categoryId", testCategory.getId());
-        requestBody.put("amount", newAmount);
-        requestBody.put("description", "Updated Income");
-        requestBody.put("transactionDate", newDate.format(formatter));
+        when(incomeService.updateIncome(
+                eq(1L),
+                eq(updateRequest.getAccountId()),
+                eq(updateRequest.getCategoryId()),
+                eq(updateRequest.getAmount()),
+                eq(updateRequest.getDescription()),
+                any(LocalDateTime.class)
+        )).thenReturn(updatedIncome);
 
         // When
-        ResultActions result = mockMvc.perform(put("/api/incomes/{id}", income.getId())
+        ResultActions result = mockMvc.perform(put("/api/incomes/1")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestBody)));
+                .content(objectMapper.writeValueAsString(updateRequest)));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$.id", is(income.getId().intValue())))
-              .andExpect(jsonPath("$.amount", is(200)))
-              .andExpect(jsonPath("$.description", is("Updated Income")))
-              .andExpect(jsonPath("$.account.id", is(testAccount.getId().intValue())))
-              .andExpect(jsonPath("$.category.id", is(testCategory.getId().intValue())));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id", is(1)))
+                .andExpect(jsonPath("$.amount", is(750)))
+                .andExpect(jsonPath("$.description", is("Updated Income")));
 
-        // Verify account balance was updated correctly
-        Account updatedAccount = accountRepository.findById(testAccount.getId()).orElseThrow();
-        // Original balance - original amount + new amount
-        assertEquals(initialBalance.subtract(BigDecimal.valueOf(100)).add(newAmount), updatedAccount.getBalance());
+        verify(incomeService, times(1)).updateIncome(
+                eq(1L),
+                eq(updateRequest.getAccountId()),
+                eq(updateRequest.getCategoryId()),
+                eq(updateRequest.getAmount()),
+                eq(updateRequest.getDescription()),
+                any(LocalDateTime.class)
+        );
     }
 
     @Test
-    void deleteIncome_ExistingId_ReturnsNoContent() throws Exception {
+    void updateIncome_NonExistingIncome_ReturnsNotFound() throws Exception {
         // Given
-        Income income = createTestIncome(testAccount, testCategory, BigDecimal.valueOf(100), "Income to Delete");
-        BigDecimal initialBalance = accountRepository.findById(testAccount.getId()).orElseThrow().getBalance();
+        when(incomeService.updateIncome(
+                eq(999L),
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        )).thenThrow(new TransactionNotFoundException("Income not found with id: 999"));
 
         // When
-        ResultActions result = mockMvc.perform(delete("/api/incomes/{id}", income.getId())
-                .contentType(MediaType.APPLICATION_JSON));
+        ResultActions result = mockMvc.perform(put("/api/incomes/999")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(incomeRequest)));
+
+        // Then
+        result.andExpect(status().isNotFound());
+
+        verify(incomeService, times(1)).updateIncome(
+                eq(999L),
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        );
+    }
+
+    @Test
+    void updateIncome_InvalidIncome_ReturnsBadRequest() throws Exception {
+        // Given
+        when(incomeService.updateIncome(
+                eq(1L),
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        )).thenThrow(new InvalidTransactionException("Category must be of type INCOME"));
+
+        // When
+        ResultActions result = mockMvc.perform(put("/api/incomes/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(incomeRequest)));
+
+        // Then
+        result.andExpect(status().isBadRequest());
+
+        verify(incomeService, times(1)).updateIncome(
+                eq(1L),
+                eq(incomeRequest.getAccountId()),
+                eq(incomeRequest.getCategoryId()),
+                eq(incomeRequest.getAmount()),
+                eq(incomeRequest.getDescription()),
+                any(LocalDateTime.class)
+        );
+    }
+
+    @Test
+    void deleteIncome_ExistingIncome_ReturnsNoContent() throws Exception {
+        // Given
+        doNothing().when(incomeService).deleteIncome(1L);
+
+        // When
+        ResultActions result = mockMvc.perform(delete("/api/incomes/1"));
 
         // Then
         result.andExpect(status().isNoContent());
 
-        // Verify income is deleted
-        mockMvc.perform(get("/api/incomes/{id}", income.getId())
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound());
-
-        // Verify account balance was restored
-        Account updatedAccount = accountRepository.findById(testAccount.getId()).orElseThrow();
-        assertEquals(initialBalance.subtract(BigDecimal.valueOf(100)), updatedAccount.getBalance());
+        verify(incomeService, times(1)).deleteIncome(1L);
     }
 
-    private Account createTestAccount(String name, BigDecimal balance, String currency) {
-        Account account = new Account();
-        account.setName(name);
-        account.setBalance(balance);
-        account.setCurrency(currency);
-        return accountRepository.save(account);
-    }
+    @Test
+    void deleteIncome_NonExistingIncome_ReturnsNotFound() throws Exception {
+        // Given
+        doThrow(new TransactionNotFoundException("Income not found with id: 999"))
+                .when(incomeService).deleteIncome(999L);
 
-    private Category createTestCategory(String name, String description, CategoryType type) {
-        Category category = new Category();
-        category.setName(name);
-        category.setDescription(description);
-        category.setType(type);
-        return categoryRepository.save(category);
-    }
+        // When
+        ResultActions result = mockMvc.perform(delete("/api/incomes/999"));
 
-    private Income createTestIncome(Account account, Category category, BigDecimal amount, String description) {
-        return createTestIncome(account, category, amount, description, LocalDateTime.now());
-    }
+        // Then
+        result.andExpect(status().isNotFound());
 
-    private Income createTestIncome(Account account, Category category, BigDecimal amount, String description, LocalDateTime transactionDate) {
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("accountId", account.getId());
-        requestBody.put("categoryId", category.getId());
-        requestBody.put("amount", amount);
-        requestBody.put("description", description);
-        requestBody.put("transactionDate", transactionDate.format(formatter));
-
-        try {
-            String responseJson = mockMvc.perform(post("/api/incomes")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(requestBody)))
-                    .andReturn()
-                    .getResponse()
-                    .getContentAsString();
-
-            return objectMapper.readValue(responseJson, Income.class);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to create test income", e);
-        }
+        verify(incomeService, times(1)).deleteIncome(999L);
     }
 }

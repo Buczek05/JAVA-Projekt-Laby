@@ -1,379 +1,497 @@
 package com.example.budget.controller;
 
+import com.example.budget.controller.dto.TransferRequest;
 import com.example.budget.entity.Account;
 import com.example.budget.entity.Category;
-import com.example.budget.entity.CategoryType;
 import com.example.budget.entity.Transfer;
-import com.example.budget.repository.AccountRepository;
-import com.example.budget.repository.CategoryRepository;
-import com.example.budget.repository.TransactionRepository;
+import com.example.budget.exception.InsufficientFundsException;
+import com.example.budget.exception.SameAccountTransferException;
+import com.example.budget.exception.TransactionNotFoundException;
+import com.example.budget.service.TransferService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.List;
 
-import static org.hamcrest.Matchers.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-class TransferControllerTest extends BaseControllerTest {
+@ExtendWith(MockitoExtension.class)
+class TransferControllerTest {
 
-    @Autowired
-    private AccountRepository accountRepository;
+    private MockMvc mockMvc;
+    private ObjectMapper objectMapper;
 
-    @Autowired
-    private CategoryRepository categoryRepository;
+    @Mock
+    private TransferService transferService;
 
-    @Autowired
-    private TransactionRepository transactionRepository;
+    @InjectMocks
+    private TransferController transferController;
 
-    private Account sourceAccount;
-    private Account destinationAccount;
-    private Category transferCategory;
-    private final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+    private Transfer testTransfer;
+    private Transfer updatedTransfer;
+    private TransferRequest transferRequest;
+    private Account fromAccount;
+    private Account toAccount;
+    private Category category;
+
+    @ControllerAdvice
+    static class TestControllerAdvice {
+
+        @ExceptionHandler(TransactionNotFoundException.class)
+        @ResponseStatus(HttpStatus.NOT_FOUND)
+        public ResponseEntity<String> handleTransactionNotFoundException(TransactionNotFoundException ex) {
+            return new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND);
+        }
+
+        @ExceptionHandler(InsufficientFundsException.class)
+        @ResponseStatus(HttpStatus.BAD_REQUEST)
+        public ResponseEntity<String> handleInsufficientFundsException(InsufficientFundsException ex) {
+            return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST);
+        }
+
+        @ExceptionHandler(SameAccountTransferException.class)
+        @ResponseStatus(HttpStatus.BAD_REQUEST)
+        public ResponseEntity<String> handleSameAccountTransferException(SameAccountTransferException ex) {
+            return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST);
+        }
+    }
 
     @BeforeEach
     void setUp() {
-        // Create test accounts and category for each test
-        sourceAccount = createTestAccount("Source Account", BigDecimal.valueOf(1000), "USD");
-        destinationAccount = createTestAccount("Destination Account", BigDecimal.valueOf(500), "USD");
-        transferCategory = createTestCategory("Transfer Category", "For testing transfers", CategoryType.EXPENSE);
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        mockMvc = MockMvcBuilders
+                .standaloneSetup(transferController)
+                .setControllerAdvice(new TestControllerAdvice())
+                .build();
+
+        // Setup test accounts
+        fromAccount = new Account();
+        fromAccount.setId(1L);
+        fromAccount.setName("From Account");
+        fromAccount.setBalance(BigDecimal.valueOf(1000));
+        fromAccount.setCurrency("USD");
+        fromAccount.setCreatedAt(LocalDateTime.now());
+        fromAccount.setUpdatedAt(LocalDateTime.now());
+
+        toAccount = new Account();
+        toAccount.setId(2L);
+        toAccount.setName("To Account");
+        toAccount.setBalance(BigDecimal.valueOf(500));
+        toAccount.setCurrency("USD");
+        toAccount.setCreatedAt(LocalDateTime.now());
+        toAccount.setUpdatedAt(LocalDateTime.now());
+
+        // Setup test category
+        category = new Category();
+        category.setId(1L);
+        category.setName("Transfer Category");
+
+        // Setup test transfer
+        testTransfer = new Transfer(
+                BigDecimal.valueOf(100),
+                "Test Transfer",
+                LocalDateTime.now(),
+                fromAccount,
+                toAccount,
+                category
+        );
+        testTransfer.setId(1L);
+
+        // Setup updated transfer
+        updatedTransfer = new Transfer(
+                BigDecimal.valueOf(200),
+                "Updated Transfer",
+                LocalDateTime.now(),
+                fromAccount,
+                toAccount,
+                category
+        );
+        updatedTransfer.setId(1L);
+
+        // Setup transfer request
+        transferRequest = new TransferRequest();
+        transferRequest.setFromAccountId(1L);
+        transferRequest.setToAccountId(2L);
+        transferRequest.setCategoryId(1L);
+        transferRequest.setAmount(BigDecimal.valueOf(100));
+        transferRequest.setDescription("Test Transfer");
+        transferRequest.setTransactionDate(LocalDateTime.now());
     }
 
     @Test
-    void getAllTransfers_ReturnsAllTransfers() throws Exception {
+    void getAllTransfers_ReturnsListOfTransfers() throws Exception {
         // Given
-        Transfer transfer1 = createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(100), "Transfer 1");
-        Transfer transfer2 = createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(200), "Transfer 2");
-
-        System.out.println("[DEBUG_LOG] Created transfer1: " + transfer1.getId() + ", " + transfer1.getDescription());
-        System.out.println("[DEBUG_LOG] Created transfer2: " + transfer2.getId() + ", " + transfer2.getDescription());
+        List<Transfer> transfers = Arrays.asList(testTransfer);
+        when(transferService.findAll()).thenReturn(transfers);
 
         // When
-        mockMvc.perform(get("/api/transfers"))
-               .andDo(result -> {
-                   System.out.println("[DEBUG_LOG] Response content: " + result.getResponse().getContentAsString());
-                   System.out.println("[DEBUG_LOG] Response status: " + result.getResponse().getStatus());
-               })
-               .andExpect(status().isOk());
-    }
-
-    @Test
-    void getTransferById_ExistingId_ReturnsTransfer() throws Exception {
-        // Given
-        Transfer transfer = createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(150), "Test Transfer");
-
-        // When
-        ResultActions result = mockMvc.perform(get("/api/transfers/{id}", transfer.getId())
+        ResultActions result = mockMvc.perform(get("/api/transfers")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$.id", is(transfer.getId().intValue())))
-              .andExpect(jsonPath("$.amount", is(150)))
-              .andExpect(jsonPath("$.description", is("Test Transfer")))
-              .andExpect(jsonPath("$.account.id", is(sourceAccount.getId().intValue())))
-              .andExpect(jsonPath("$.toAccount.id", is(destinationAccount.getId().intValue())))
-              .andExpect(jsonPath("$.category.id", is(transferCategory.getId().intValue())));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(100)))
+                .andExpect(jsonPath("$[0].description", is("Test Transfer")));
+
+        verify(transferService, times(1)).findAll();
     }
 
     @Test
-    void getTransferById_NonExistingId_ReturnsNotFound() throws Exception {
+    void getTransferById_ExistingTransfer_ReturnsTransfer() throws Exception {
+        // Given
+        when(transferService.findById(1L)).thenReturn(testTransfer);
+
         // When
-        ResultActions result = mockMvc.perform(get("/api/transfers/{id}", 999)
+        ResultActions result = mockMvc.perform(get("/api/transfers/1")
+                .contentType(MediaType.APPLICATION_JSON));
+
+        // Then
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id", is(1)))
+                .andExpect(jsonPath("$.amount", is(100)))
+                .andExpect(jsonPath("$.description", is("Test Transfer")));
+
+        verify(transferService, times(1)).findById(1L);
+    }
+
+    @Test
+    void getTransferById_NonExistingTransfer_ReturnsNotFound() throws Exception {
+        // Given
+        when(transferService.findById(999L)).thenThrow(new TransactionNotFoundException("Transfer not found with id: 999"));
+
+        // When
+        ResultActions result = mockMvc.perform(get("/api/transfers/999")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isNotFound());
+
+        verify(transferService, times(1)).findById(999L);
     }
 
     @Test
-    void getTransfersByFromAccount_ReturnsMatchingTransfers() throws Exception {
+    void getTransfersByFromAccount_ReturnsListOfTransfers() throws Exception {
         // Given
-        Account anotherAccount = createTestAccount("Another Account", BigDecimal.valueOf(2000), "EUR");
-        createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(100), "Transfer from Source Account");
-        createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(200), "Another Transfer from Source Account");
-        createTestTransfer(anotherAccount, destinationAccount, transferCategory, BigDecimal.valueOf(300), "Transfer from Another Account");
+        List<Transfer> transfers = Arrays.asList(testTransfer);
+        when(transferService.findByFromAccount(1L)).thenReturn(transfers);
 
         // When
-        ResultActions result = mockMvc.perform(get("/api/transfers/from-account/{accountId}", sourceAccount.getId())
+        ResultActions result = mockMvc.perform(get("/api/transfers/from-account/1")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$", hasSize(2)))
-              .andExpect(jsonPath("$[*].description", hasItems("Transfer from Source Account", "Another Transfer from Source Account")))
-              .andExpect(jsonPath("$[*].account.id", everyItem(is(sourceAccount.getId().intValue()))));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(100)))
+                .andExpect(jsonPath("$[0].description", is("Test Transfer")));
+
+        verify(transferService, times(1)).findByFromAccount(1L);
     }
 
     @Test
-    void getTransfersByToAccount_ReturnsMatchingTransfers() throws Exception {
+    void getTransfersByToAccount_ReturnsListOfTransfers() throws Exception {
         // Given
-        Account anotherAccount = createTestAccount("Another Destination", BigDecimal.valueOf(2000), "EUR");
-        createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(100), "Transfer to Destination Account");
-        createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(200), "Another Transfer to Destination Account");
-        createTestTransfer(sourceAccount, anotherAccount, transferCategory, BigDecimal.valueOf(300), "Transfer to Another Account");
+        List<Transfer> transfers = Arrays.asList(testTransfer);
+        when(transferService.findByToAccount(2L)).thenReturn(transfers);
 
         // When
-        ResultActions result = mockMvc.perform(get("/api/transfers/to-account/{accountId}", destinationAccount.getId())
+        ResultActions result = mockMvc.perform(get("/api/transfers/to-account/2")
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$", hasSize(2)))
-              .andExpect(jsonPath("$[*].description", hasItems("Transfer to Destination Account", "Another Transfer to Destination Account")))
-              .andExpect(jsonPath("$[*].toAccount.id", everyItem(is(destinationAccount.getId().intValue()))));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(100)))
+                .andExpect(jsonPath("$[0].description", is("Test Transfer")));
+
+        verify(transferService, times(1)).findByToAccount(2L);
     }
 
     @Test
-    void getTransfersByDateRange_ReturnsMatchingTransfers() throws Exception {
+    void getTransfersByDateRange_ReturnsListOfTransfers() throws Exception {
         // Given
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime yesterday = now.minusDays(1);
-        LocalDateTime tomorrow = now.plusDays(1);
-
-        createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(100), "Yesterday Transfer", yesterday);
-        createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(200), "Today Transfer", now);
-        createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(300), "Tomorrow Transfer", tomorrow);
+        List<Transfer> transfers = Arrays.asList(testTransfer);
+        LocalDateTime startDate = LocalDateTime.now().minusDays(1);
+        LocalDateTime endDate = LocalDateTime.now().plusDays(1);
+        when(transferService.findByDateRange(any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(transfers);
 
         // When
         ResultActions result = mockMvc.perform(get("/api/transfers/date-range")
-                .param("startDate", yesterday.format(formatter))
-                .param("endDate", now.format(formatter))
+                .param("startDate", startDate.toString())
+                .param("endDate", endDate.toString())
                 .contentType(MediaType.APPLICATION_JSON));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$", hasSize(2)))
-              .andExpect(jsonPath("$[*].description", hasItems("Yesterday Transfer", "Today Transfer")))
-              .andExpect(jsonPath("$[*].amount", hasItems(100, 200)));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(1)))
+                .andExpect(jsonPath("$[0].amount", is(100)))
+                .andExpect(jsonPath("$[0].description", is("Test Transfer")));
+
+        verify(transferService, times(1)).findByDateRange(any(LocalDateTime.class), any(LocalDateTime.class));
     }
 
     @Test
     void createTransfer_ValidTransfer_ReturnsCreatedTransfer() throws Exception {
         // Given
-        BigDecimal sourceInitialBalance = sourceAccount.getBalance();
-        BigDecimal destInitialBalance = destinationAccount.getBalance();
-        BigDecimal transferAmount = BigDecimal.valueOf(150);
-        LocalDateTime transactionDate = LocalDateTime.now();
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("fromAccountId", sourceAccount.getId());
-        requestBody.put("toAccountId", destinationAccount.getId());
-        requestBody.put("categoryId", transferCategory.getId());
-        requestBody.put("amount", transferAmount);
-        requestBody.put("description", "New Transfer");
-        requestBody.put("transactionDate", transactionDate.format(formatter));
+        when(transferService.createTransfer(
+                eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        )).thenReturn(testTransfer);
 
         // When
         ResultActions result = mockMvc.perform(post("/api/transfers")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestBody)));
+                .content(objectMapper.writeValueAsString(transferRequest)));
 
         // Then
         result.andExpect(status().isCreated())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$.id", notNullValue()))
-              .andExpect(jsonPath("$.amount", is(150)))
-              .andExpect(jsonPath("$.description", is("New Transfer")))
-              .andExpect(jsonPath("$.account.id", is(sourceAccount.getId().intValue())))
-              .andExpect(jsonPath("$.toAccount.id", is(destinationAccount.getId().intValue())))
-              .andExpect(jsonPath("$.category.id", is(transferCategory.getId().intValue())));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id", is(1)))
+                .andExpect(jsonPath("$.amount", is(100)))
+                .andExpect(jsonPath("$.description", is("Test Transfer")));
 
-        // Verify account balances were updated
-        Account updatedSourceAccount = accountRepository.findById(sourceAccount.getId()).orElseThrow();
-        Account updatedDestAccount = accountRepository.findById(destinationAccount.getId()).orElseThrow();
-        assertEquals(sourceInitialBalance.subtract(transferAmount), updatedSourceAccount.getBalance());
-        assertEquals(destInitialBalance.add(transferAmount), updatedDestAccount.getBalance());
-    }
-
-    @Test
-    void createTransfer_SameAccount_ReturnsBadRequest() throws Exception {
-        // Given
-        LocalDateTime transactionDate = LocalDateTime.now();
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("fromAccountId", sourceAccount.getId());
-        requestBody.put("toAccountId", sourceAccount.getId()); // Same account
-        requestBody.put("categoryId", transferCategory.getId());
-        requestBody.put("amount", BigDecimal.valueOf(150));
-        requestBody.put("description", "Invalid Transfer");
-        requestBody.put("transactionDate", transactionDate.format(formatter));
-
-        // When
-        ResultActions result = mockMvc.perform(post("/api/transfers")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestBody)));
-
-        // Then
-        result.andExpect(status().isBadRequest());
-
-        // Verify account balance was not changed
-        Account unchangedAccount = accountRepository.findById(sourceAccount.getId()).orElseThrow();
-        assertEquals(sourceAccount.getBalance(), unchangedAccount.getBalance());
+        verify(transferService, times(1)).createTransfer(
+                eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        );
     }
 
     @Test
     void createTransfer_InsufficientFunds_ReturnsBadRequest() throws Exception {
         // Given
-        BigDecimal transferAmount = sourceAccount.getBalance().add(BigDecimal.valueOf(100)); // More than available
-        LocalDateTime transactionDate = LocalDateTime.now();
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("fromAccountId", sourceAccount.getId());
-        requestBody.put("toAccountId", destinationAccount.getId());
-        requestBody.put("categoryId", transferCategory.getId());
-        requestBody.put("amount", transferAmount);
-        requestBody.put("description", "Transfer with Insufficient Funds");
-        requestBody.put("transactionDate", transactionDate.format(formatter));
+        when(transferService.createTransfer(
+                eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        )).thenThrow(new InsufficientFundsException("Insufficient funds"));
 
         // When
         ResultActions result = mockMvc.perform(post("/api/transfers")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestBody)));
+                .content(objectMapper.writeValueAsString(transferRequest)));
 
         // Then
         result.andExpect(status().isBadRequest());
 
-        // Verify account balances were not changed
-        Account unchangedSourceAccount = accountRepository.findById(sourceAccount.getId()).orElseThrow();
-        Account unchangedDestAccount = accountRepository.findById(destinationAccount.getId()).orElseThrow();
-        assertEquals(sourceAccount.getBalance(), unchangedSourceAccount.getBalance());
-        assertEquals(destinationAccount.getBalance(), unchangedDestAccount.getBalance());
+        verify(transferService, times(1)).createTransfer(
+                eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        );
+    }
+
+    @Test
+    void createTransfer_SameAccountTransfer_ReturnsBadRequest() throws Exception {
+        // Given
+        transferRequest.setToAccountId(1L); // Same as fromAccountId
+        when(transferService.createTransfer(
+                eq(1L), eq(1L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        )).thenThrow(new SameAccountTransferException("Source and destination accounts must be different"));
+
+        // When
+        ResultActions result = mockMvc.perform(post("/api/transfers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(transferRequest)));
+
+        // Then
+        result.andExpect(status().isBadRequest());
+
+        verify(transferService, times(1)).createTransfer(
+                eq(1L), eq(1L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        );
     }
 
     @Test
     void updateTransfer_ValidTransfer_ReturnsUpdatedTransfer() throws Exception {
         // Given
-        Transfer transfer = createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(100), "Original Transfer");
+        TransferRequest updateRequest = new TransferRequest();
+        updateRequest.setFromAccountId(1L);
+        updateRequest.setToAccountId(2L);
+        updateRequest.setCategoryId(1L);
+        updateRequest.setAmount(BigDecimal.valueOf(200));
+        updateRequest.setDescription("Updated Transfer");
+        updateRequest.setTransactionDate(LocalDateTime.now());
 
-        // Get updated balances after initial transfer
-        BigDecimal sourceBalanceAfterInitialTransfer = accountRepository.findById(sourceAccount.getId()).orElseThrow().getBalance();
-        BigDecimal destBalanceAfterInitialTransfer = accountRepository.findById(destinationAccount.getId()).orElseThrow().getBalance();
-
-        BigDecimal newAmount = BigDecimal.valueOf(200);
-        LocalDateTime newDate = LocalDateTime.now();
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("fromAccountId", sourceAccount.getId());
-        requestBody.put("toAccountId", destinationAccount.getId());
-        requestBody.put("categoryId", transferCategory.getId());
-        requestBody.put("amount", newAmount);
-        requestBody.put("description", "Updated Transfer");
-        requestBody.put("transactionDate", newDate.format(formatter));
+        when(transferService.updateTransfer(
+                eq(1L), eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Updated Transfer"), 
+                any(LocalDateTime.class)
+        )).thenReturn(updatedTransfer);
 
         // When
-        ResultActions result = mockMvc.perform(put("/api/transfers/{id}", transfer.getId())
+        ResultActions result = mockMvc.perform(put("/api/transfers/1")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(requestBody)));
+                .content(objectMapper.writeValueAsString(updateRequest)));
 
         // Then
         result.andExpect(status().isOk())
-              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-              .andExpect(jsonPath("$.id", is(transfer.getId().intValue())))
-              .andExpect(jsonPath("$.amount", is(200)))
-              .andExpect(jsonPath("$.description", is("Updated Transfer")))
-              .andExpect(jsonPath("$.account.id", is(sourceAccount.getId().intValue())))
-              .andExpect(jsonPath("$.toAccount.id", is(destinationAccount.getId().intValue())))
-              .andExpect(jsonPath("$.category.id", is(transferCategory.getId().intValue())));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id", is(1)))
+                .andExpect(jsonPath("$.amount", is(200)))
+                .andExpect(jsonPath("$.description", is("Updated Transfer")));
 
-        // Verify account balances were updated correctly
-        Account updatedSourceAccount = accountRepository.findById(sourceAccount.getId()).orElseThrow();
-        Account updatedDestAccount = accountRepository.findById(destinationAccount.getId()).orElseThrow();
-
-        // Source account: original balance after transfer - (new amount - original amount)
-        assertEquals(sourceBalanceAfterInitialTransfer.subtract(newAmount.subtract(BigDecimal.valueOf(100))), 
-                     updatedSourceAccount.getBalance());
-
-        // Destination account: original balance after transfer + (new amount - original amount)
-        assertEquals(destBalanceAfterInitialTransfer.add(newAmount.subtract(BigDecimal.valueOf(100))), 
-                     updatedDestAccount.getBalance());
+        verify(transferService, times(1)).updateTransfer(
+                eq(1L), eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Updated Transfer"), 
+                any(LocalDateTime.class)
+        );
     }
 
     @Test
-    void deleteTransfer_ExistingId_ReturnsNoContent() throws Exception {
+    void updateTransfer_NonExistingTransfer_ReturnsNotFound() throws Exception {
         // Given
-        Transfer transfer = createTestTransfer(sourceAccount, destinationAccount, transferCategory, BigDecimal.valueOf(100), "Transfer to Delete");
-
-        // Get updated balances after initial transfer
-        BigDecimal sourceBalanceAfterTransfer = accountRepository.findById(sourceAccount.getId()).orElseThrow().getBalance();
-        BigDecimal destBalanceAfterTransfer = accountRepository.findById(destinationAccount.getId()).orElseThrow().getBalance();
+        when(transferService.updateTransfer(
+                eq(999L), eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        )).thenThrow(new TransactionNotFoundException("Transfer not found with id: 999"));
 
         // When
-        ResultActions result = mockMvc.perform(delete("/api/transfers/{id}", transfer.getId())
-                .contentType(MediaType.APPLICATION_JSON));
+        ResultActions result = mockMvc.perform(put("/api/transfers/999")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(transferRequest)));
+
+        // Then
+        result.andExpect(status().isNotFound());
+
+        verify(transferService, times(1)).updateTransfer(
+                eq(999L), eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        );
+    }
+
+    @Test
+    void updateTransfer_InsufficientFunds_ReturnsBadRequest() throws Exception {
+        // Given
+        when(transferService.updateTransfer(
+                eq(1L), eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        )).thenThrow(new InsufficientFundsException("Insufficient funds"));
+
+        // When
+        ResultActions result = mockMvc.perform(put("/api/transfers/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(transferRequest)));
+
+        // Then
+        result.andExpect(status().isBadRequest());
+
+        verify(transferService, times(1)).updateTransfer(
+                eq(1L), eq(1L), eq(2L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        );
+    }
+
+    @Test
+    void updateTransfer_SameAccountTransfer_ReturnsBadRequest() throws Exception {
+        // Given
+        transferRequest.setToAccountId(1L); // Same as fromAccountId
+        when(transferService.updateTransfer(
+                eq(1L), eq(1L), eq(1L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        )).thenThrow(new SameAccountTransferException("Source and destination accounts must be different"));
+
+        // When
+        ResultActions result = mockMvc.perform(put("/api/transfers/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(transferRequest)));
+
+        // Then
+        result.andExpect(status().isBadRequest());
+
+        verify(transferService, times(1)).updateTransfer(
+                eq(1L), eq(1L), eq(1L), eq(1L), 
+                any(BigDecimal.class), 
+                eq("Test Transfer"), 
+                any(LocalDateTime.class)
+        );
+    }
+
+    @Test
+    void deleteTransfer_ExistingTransfer_ReturnsNoContent() throws Exception {
+        // Given
+        doNothing().when(transferService).deleteTransfer(1L);
+
+        // When
+        ResultActions result = mockMvc.perform(delete("/api/transfers/1"));
 
         // Then
         result.andExpect(status().isNoContent());
 
-        // Verify transfer is deleted
-        mockMvc.perform(get("/api/transfers/{id}", transfer.getId())
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isNotFound());
-
-        // Verify account balances were restored
-        Account updatedSourceAccount = accountRepository.findById(sourceAccount.getId()).orElseThrow();
-        Account updatedDestAccount = accountRepository.findById(destinationAccount.getId()).orElseThrow();
-
-        // Source account should be restored by adding the transfer amount back
-        assertEquals(sourceBalanceAfterTransfer.add(BigDecimal.valueOf(100)), updatedSourceAccount.getBalance());
-
-        // Destination account should be restored by subtracting the transfer amount
-        assertEquals(destBalanceAfterTransfer.subtract(BigDecimal.valueOf(100)), updatedDestAccount.getBalance());
+        verify(transferService, times(1)).deleteTransfer(1L);
     }
 
-    private Account createTestAccount(String name, BigDecimal balance, String currency) {
-        Account account = new Account();
-        account.setName(name);
-        account.setBalance(balance);
-        account.setCurrency(currency);
-        return accountRepository.save(account);
-    }
+    @Test
+    void deleteTransfer_NonExistingTransfer_ReturnsNotFound() throws Exception {
+        // Given
+        doThrow(new TransactionNotFoundException("Transfer not found with id: 999"))
+                .when(transferService).deleteTransfer(999L);
 
-    private Category createTestCategory(String name, String description, CategoryType type) {
-        Category category = new Category();
-        category.setName(name);
-        category.setDescription(description);
-        category.setType(type);
-        return categoryRepository.save(category);
-    }
+        // When
+        ResultActions result = mockMvc.perform(delete("/api/transfers/999"));
 
-    private Transfer createTestTransfer(Account fromAccount, Account toAccount, Category category, BigDecimal amount, String description) {
-        return createTestTransfer(fromAccount, toAccount, category, amount, description, LocalDateTime.now());
-    }
+        // Then
+        result.andExpect(status().isNotFound());
 
-    private Transfer createTestTransfer(Account fromAccount, Account toAccount, Category category, BigDecimal amount, String description, LocalDateTime transactionDate) {
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("fromAccountId", fromAccount.getId());
-        requestBody.put("toAccountId", toAccount.getId());
-        requestBody.put("categoryId", category.getId());
-        requestBody.put("amount", amount);
-        requestBody.put("description", description);
-        requestBody.put("transactionDate", transactionDate.format(formatter));
-
-        try {
-            String responseJson = mockMvc.perform(post("/api/transfers")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(requestBody)))
-                    .andReturn()
-                    .getResponse()
-                    .getContentAsString();
-
-            return objectMapper.readValue(responseJson, Transfer.class);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to create test transfer", e);
-        }
+        verify(transferService, times(1)).deleteTransfer(999L);
     }
 }

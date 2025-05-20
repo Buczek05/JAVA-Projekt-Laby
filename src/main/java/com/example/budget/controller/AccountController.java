@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,6 +37,7 @@ public class AccountController {
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @GetMapping
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<List<Account>> getAllAccounts() {
         List<Account> accounts = accountService.findAll();
         return ResponseEntity.ok(accounts);
@@ -54,6 +56,7 @@ public class AccountController {
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<Account> getAccountById(
             @Parameter(description = "ID of the account to retrieve", required = true)
             @PathVariable Long id) {
@@ -74,6 +77,7 @@ public class AccountController {
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     @PostMapping
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<Account> createAccount(
             @Parameter(description = "Account object to be created", required = true)
             @Valid @RequestBody Account account) {
