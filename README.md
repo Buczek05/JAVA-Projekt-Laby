@@ -1,99 +1,132 @@
-# Budget Application
+# Aplikacja do Zarządzania Budżetem
 
-A Spring Boot application for budget management with PostgreSQL database.
+## Przegląd
+Jest to Aplikacja do Zarządzania Budżetem zbudowana przy użyciu Spring Boot, która umożliwia użytkownikom zarządzanie ich osobistymi finansami. Aplikacja zapewnia funkcjonalność śledzenia przychodów, wydatków, transferów między kontami oraz kategoryzowania transakcji.
 
-## Docker Configuration
+## Role Użytkowników (Kontrola Dostępu Oparta na Rolach)
+Aplikacja implementuje Kontrolę Dostępu Opartą na Rolach (RBAC) z dwoma typami użytkowników:
 
-This project includes Docker configuration for easy setup and deployment.
+1. **USER (UŻYTKOWNIK)**
+   - Może dodawać i przeglądać obiekty
 
-### Prerequisites
+2. **ADMIN (ADMINISTRATOR)**
+   - Może edytować i usuwać obiekty
 
-- Docker
-- Docker Compose
+## Stos Technologiczny
 
-### Running with Docker
+### Repozytorium Git
+- Projekt jest utrzymywany w repozytorium Git
 
-1. Build and start the application with PostgreSQL:
+### Docker
+Aplikacja jest skonteneryzowana przy użyciu Dockera:
+- Docker Compose do orkiestracji aplikacji i usług bazodanowych
 
+Aby uruchomić aplikację przy użyciu Dockera:
 ```bash
 docker-compose up -d
 ```
 
-2. The application will be available at http://localhost:8080
+### Maven
+Projekt jest zgodny ze standardową strukturą Maven:
+- Kod źródłowy w `src/main/java`
+- Zasoby w `src/main/resources`
+- Testy w `src/test/java`
+- Zależności i konfiguracja budowy w `pom.xml`
 
-3. To stop the application:
+Kluczowe zależności:
+- Spring Boot 3.5.0
+- Spring Data JPA
+- Spring Security
+- Spring Web
+- Sterownik PostgreSQL
+- Lombok
+- Springdoc OpenAPI
+- JUnit i Mockito do testowania
+- TestContainers do testów integracyjnych
 
+### Framework Spring
+Aplikacja wykorzystuje różne komponenty frameworka Spring:
+
+- **Spring Boot**: Do uruchamiania aplikacji i automatycznej konfiguracji
+- **Spring Web**: Do budowania API RESTowych
+- **Spring Data JPA**: Do dostępu do bazy danych i ORM
+- **Spring Security**: Do uwierzytelniania i autoryzacji
+- **Spring Validation**: Do walidacji danych wejściowych
+
+### Swagger UI (Springdoc OpenAPI)
+Dokumentacja API jest dostępna przez Swagger UI, skonfigurowany za pomocą Springdoc OpenAPI:
+- Interaktywna dokumentacja API
+- Możliwość testowania endpointów bezpośrednio z przeglądarki
+- Wsparcie dla uwierzytelniania JWT w Swagger UI
+
+Dostęp do Swagger UI pod adresem: `http://localhost:8080/swagger-ui.html`
+![swagger_ui.png](files/swagger_ui.png)
+### Hibernate + SQL
+Aplikacja używa Hibernate jako narzędzia ORM z bazą danych PostgreSQL:
+- Mapowania encji JPA
+- Konfiguracja dialektu PostgreSQL
+- Pula połączeń z HikariCP
+
+#### Konfiguracja Bazy Danych
+- Rozwój: Skonfigurowany w `application-dev.properties`
+- Produkcja: Skonfigurowany w `application-prod.properties`
+- Testowanie: Skonfigurowany w `application-test.properties`
+
+#### Schemat Bazy Danych
+Aplikacja używa kilku encji, w tym:
+- User (Użytkownik)
+- Account (Konto)
+- Category (Kategoria)
+- Expense (Wydatek)
+- Income (Przychód)
+- Transfer
+
+**Uwaga**: Aplikacja obecnie nie implementuje Flyway ani Liquibase do migracji bazy danych, co jest wymaganiem do przyszłej implementacji.
+
+### Testowanie
+Aplikacja zawiera kompleksowe testy:
+- Testy jednostkowe z JUnit 5 i Mockito
+- Testy kontrolerów przy użyciu MockMvc
+- Testy integracyjne z TestContainers dla PostgreSQL
+![Pokrycie testami](files/pokrycie.png)
+
+Testy są zorganizowane według typu komponentu:
+- Testy kontrolerów
+- Testy serwisów
+- Testy bezpieczeństwa
+- Testy konfiguracji
+
+## Uruchamianie Aplikacji
+
+### Wymagania Wstępne
+- Java 21
+- Docker i Docker Compose
+- Maven (opcjonalnie, jeśli nie używasz wrappera Maven)
+
+### Tryb Deweloperski
 ```bash
-docker-compose down
+./mvnw spring-boot:run -Dspring.profiles.active=dev
 ```
 
-4. To stop the application and remove volumes (this will delete the database data):
-
-```bash
-docker-compose down -v
-```
-
-### Database Information
-
-- PostgreSQL database is exposed on port 5432
-- Database name: budget
-- Username: postgres
-- Password: postgres
-
-## Development
-
-### Running Locally
-
-To run the application locally without Docker:
-
-1. Make sure you have PostgreSQL installed and running on port 5432
-2. Create a database named 'budget'
-3. Run the application using Maven:
-
-```bash
-./mvnw spring-boot:run
-```
-
-### Configuration
-
-The application uses Spring profiles for environment-specific configurations:
-
-- **dev** (default): Development environment configuration
-  - Uses local PostgreSQL database
-  - Shows detailed SQL logs
-  - Automatically updates database schema
-
-- **prod**: Production environment configuration
-  - Used when running with Docker
-  - Optimized connection pool settings
-  - Minimal logging
-  - Validates database schema instead of updating it
-
-- **test**: Testing environment configuration
-  - Uses a separate test database
-  - Creates and drops database schema for each test run
-  - Shows detailed SQL logs for debugging
-
-#### How to specify a profile:
-
-1. Using command line:
-```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-```
-
-2. Using environment variable:
-```bash
-export SPRING_PROFILES_ACTIVE=prod
-./mvnw spring-boot:run
-```
-
-3. In Docker (already configured in docker-compose.yml):
+### Tryb Produkcyjny
 ```bash
 docker-compose up -d
 ```
 
-Configuration files:
-- `src/main/resources/application.properties`: Common settings
-- `src/main/resources/application-dev.properties`: Development settings
-- `src/main/resources/application-prod.properties`: Production settings
-- `src/main/resources/application-test.properties`: Testing settings
+### Uruchamianie Testów
+```bash
+./mvnw test
+```
+
+## Endpointy API
+
+Aplikacja udostępnia endpointy API RESTful dla:
+- Rejestracji i uwierzytelniania użytkowników
+- Zarządzania kontami
+- Śledzenia wydatków
+- Rejestrowania przychodów
+- Transferów między kontami
+- Zarządzania kategoriami
+![Endpoint Expense](files/endpoint1.png)
+
+Szczegółowa dokumentacja API jest dostępna w Swagger UI pod adresem `http://localhost:8080/swagger-ui.html` podczas działania aplikacji.
